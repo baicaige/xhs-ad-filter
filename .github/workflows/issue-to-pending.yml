@@ -1,0 +1,84 @@
+name: Add ad issue to pending pool
+
+on:
+  issues:
+    types: [opened, edited, reopened, labeled]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  add-to-pending:
+    if: contains(github.event.issue.labels.*.name, 'ad-sample')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const crypto = require('crypto');
+
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+            const field = (name) => {
+              const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const re = new RegExp(`### ${escaped}\\s+([\\s\\S]*?)(?=\\n### |$)`, 'i');
+              const match = body.match(re);
+              return match ? match[1].trim().replace(/^_No response_$/i, '') : '';
+            };
+            const uniq = (items) => [...new Set(items.filter(Boolean).map((item) => String(item).trim()).filter(Boolean))];
+            const extractKeywords = (text) => {
+              const fixed = ['复制口令', '启动小红书', '脱单群', '搭子群', '交流群', '找对象', '单身', '高质量男生群'];
+              const codes = text.match(/\b[A-Z]{1,4}\d{2,8}\b/g) || [];
+              const groups = text.match(/[\u4e00-\u9fa5A-Za-z0-9]{2,12}(?:群|交流群|搭子|脱单故事)/g) || [];
+              return uniq([...fixed.filter((word) => text.includes(word)), ...codes, ...groups]);
+            };
+
+            const text = field('广告内容');
+            if (!text) core.setFailed('Issue is missing 广告内容');
+
+            const item = {
+              id: `issue-${issue.number}-${crypto.createHash('sha1').update(text).digest('hex').slice(0, 10)}`,
+              type: 'group_ad',
+              text,
+              author: field('作者'),
+              noteId: field('帖子 ID'),
+              sourceUrl: field('来源链接') || issue.html_url,
+              keywords: extractKeywords(text),
+              createdAt: issue.created_at,
+              status: 'pending',
+              source: 'github_issue',
+              issueNumber: issue.number
+            };
+
+            const path = 'pending.json';
+            const current = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const pending = Array.isArray(current.pending) ? current.pending : [];
+            const signature = `${item.text}|${item.author}|${item.noteId}`;
+            const exists = pending.some((entry) => entry.id === item.id || `${entry.text}|${entry.author || ''}|${entry.noteId || ''}` === signature);
+            if (!exists) {
+              current.pending = [item, ...pending].slice(0, 500);
+              fs.writeFileSync(path, `${JSON.stringify(current, null, 2)}\n`);
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: exists ? '这个样本已经在待审核池中。' : '已加入 `pending.json` 待审核池。'
+            });
+
+      - name: Commit pending update
+        run: |
+          if git diff --quiet pending.json; then
+            echo "No pending changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pending.json
+          git commit -m "Add ad sample from issue #${{ github.event.issue.number }}"
+          git push
