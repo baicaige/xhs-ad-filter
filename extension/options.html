@@ -11,6 +11,8 @@
     h1 { margin: 0 0 16px; font-size: 24px; letter-spacing: 0; }
     label { display: grid; gap: 6px; margin-bottom: 14px; color: #667085; }
     input, select { border: 1px solid #d9e0e8; border-radius: 6px; padding: 10px 12px; font: inherit; color: #17202a; }
+    .check { display: flex; gap: 8px; align-items: center; color: #17202a; }
+    .check input { width: auto; }
     button { border: 0; border-radius: 6px; padding: 10px 14px; background: #0f766e; color: #fff; font-weight: 650; cursor: pointer; }
     .notice { margin-top: 12px; color: #067647; }
   </style>
@@ -22,11 +24,30 @@
       <label>规则地址
         <input id="rulesBaseUrl" placeholder="https://baicaige.github.io/xhs-ad-filter">
       </label>
+      <label>Worker API
+        <input id="apiBaseUrl" placeholder="https://xhs-rules-api.qbbaicai.workers.dev">
+      </label>
       <label>命中后处理
         <select id="mode">
           <option value="hide">隐藏评论</option>
           <option value="mark">标记评论</option>
         </select>
+      </label>
+      <label>疑似广告处理
+        <select id="reportMode">
+          <option value="local">仅加入本地待审核池</option>
+          <option value="pending">上报到 Worker 待审核池</option>
+          <option value="approve">直接通过并写入规则库</option>
+        </select>
+      </label>
+      <label>上报口令 SUBMIT_KEY
+        <input id="submitKey" type="password" autocomplete="off" placeholder="用于上报 /submit">
+      </label>
+      <label>后台口令 ADMIN_KEY
+        <input id="adminKey" type="password" autocomplete="off" placeholder="仅直接入库模式需要">
+      </label>
+      <label class="check">
+        <input id="showPageBadge" type="checkbox"> 在页面显示屏蔽/疑似统计提示
       </label>
       <button id="save">保存并刷新规则</button>
       <p id="status" class="notice"></p>

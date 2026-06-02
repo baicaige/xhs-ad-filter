@@ -30,6 +30,12 @@ export default {
         const result = await approveItem(env, item);
         return json({ ok: true, ...result });
       }
+      if (request.method === "POST" && url.pathname === "/submit") {
+        requireSubmit(request, env);
+        const item = normalizePending(await request.json());
+        const result = await submitItem(env, item);
+        return json({ ok: true, ...result });
+      }
       if (request.method === "POST" && url.pathname === "/hit") {
         if (env.ALLOW_PUBLIC_HITS !== "true") throw httpError("Hit reporting is disabled", 403);
         const payload = await request.json();
@@ -91,6 +97,24 @@ async function approveItem(env, item) {
   return { rules: nextRules, authors: nextAuthors, notes: nextNotes, pending: nextPending };
 }
 
+async function submitItem(env, item) {
+  const pendingFile = await ghGet(env, "pending.json").catch(() => ({ json: { pending: [] }, sha: null }));
+  const current = Array.isArray(pendingFile.json.pending) ? pendingFile.json.pending : [];
+  const signature = pendingSignature(item);
+  const exists = current.some((entry) => entry.id === item.id || pendingSignature(entry) === signature);
+  if (exists) return { skipped: true, pending: pendingFile.json };
+
+  const nextPending = {
+    pending: [{
+      ...item,
+      status: "pending",
+      source: item.source || "extension_report"
+    }, ...current].slice(0, 500)
+  };
+  await ghPut(env, "pending.json", nextPending, pendingFile.sha, `Submit XHS ad sample ${item.id}`);
+  return { pending: nextPending };
+}
+
 async function recordHit(env, payload) {
   const keywords = uniq(payload.keywords || []);
   if (!keywords.length) return { skipped: true };
@@ -124,6 +148,13 @@ function requireAdmin(request, env) {
   if (token !== env.ADMIN_KEY) throw httpError("Unauthorized", 401);
 }
 
+function requireSubmit(request, env) {
+  if (!env.SUBMIT_KEY) throw httpError("SUBMIT_KEY is not configured", 500);
+  const auth = request.headers.get("Authorization") || "";
+  const token = auth.replace(/^Bearer\s+/i, "");
+  if (token !== env.SUBMIT_KEY) throw httpError("Unauthorized", 401);
+}
+
 function normalizePending(item) {
   if (!item?.text) throw httpError("Missing sample text", 400);
   return {
@@ -133,8 +164,15 @@ function normalizePending(item) {
     author: item.author || "",
     noteId: item.noteId || "",
     keywords: uniq(item.keywords || extractKeywords(item.text)),
+    reason: item.reason || "",
+    confidence: item.confidence || "",
+    url: item.url || "",
     createdAt: item.createdAt || new Date().toISOString()
   };
+}
+
+function pendingSignature(item) {
+  return `${item.text || ""}|${item.author || ""}|${item.noteId || ""}`;
 }
 
 function extractKeywords(text) {
