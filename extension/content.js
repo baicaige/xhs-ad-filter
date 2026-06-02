@@ -1,5 +1,12 @@
 const SEEN_ATTR = "data-xhs-ad-filter-seen";
 const BADGE_ID = "xhs-ad-filter-badge";
+const COMMENT_SELECTORS = [
+  ".comment-item",
+  ".comment-item-wrapper",
+  "[data-testid='comment-item']",
+  "div[class*='comment-item']",
+  "div[class*='CommentItem']"
+];
 const DEFAULT_RULES = {
   rules: { keywords: ["复制口令", "启动小红书", "脱单群", "搭子群", "交流群"], regex: ["CA\\d{2,8}"] },
   authors: { authors: [] },
@@ -75,12 +82,16 @@ function detectSuspicion(text) {
 
 function isLikelyComment(node) {
   const text = node.textContent || "";
-  return text.length >= 8 && text.length <= 1200;
+  if (text.length < 8 || text.length > 1200) return false;
+  if (node.matches("button, a, [role='button'], input, textarea, [contenteditable='true']")) return false;
+  if ((node.querySelectorAll(COMMENT_SELECTORS.join(",")).length || 0) > 1) return false;
+  if ((node.querySelectorAll("button, a, input, textarea, [role='button']").length || 0) > 8) return false;
+  return true;
 }
 
 function scan() {
   document
-    .querySelectorAll(".comment-item, .comment, [class*=comment], [class*=Comment]")
+    .querySelectorAll(COMMENT_SELECTORS.join(","))
     .forEach(inspectNode);
 }
 
