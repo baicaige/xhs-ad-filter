@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XHS Ad Filter 设置</title>
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #17202a; font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { max-width: 720px; margin: 0 auto; padding: 28px 18px; }
+    section { background: #fff; border: 1px solid #d9e0e8; border-radius: 8px; padding: 18px; }
+    h1 { margin: 0 0 16px; font-size: 24px; letter-spacing: 0; }
+    label { display: grid; gap: 6px; margin-bottom: 14px; color: #667085; }
+    input, select { border: 1px solid #d9e0e8; border-radius: 6px; padding: 10px 12px; font: inherit; color: #17202a; }
+    button { border: 0; border-radius: 6px; padding: 10px 14px; background: #0f766e; color: #fff; font-weight: 650; cursor: pointer; }
+    .notice { margin-top: 12px; color: #067647; }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>XHS Ad Filter 设置</h1>
+      <label>规则地址
+        <input id="rulesBaseUrl" placeholder="https://baicaige.github.io/xhs-ad-filter">
+      </label>
+      <label>命中后处理
+        <select id="mode">
+          <option value="hide">隐藏评论</option>
+          <option value="mark">标记评论</option>
+        </select>
+      </label>
+      <button id="save">保存并刷新规则</button>
+      <p id="status" class="notice"></p>
+    </section>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

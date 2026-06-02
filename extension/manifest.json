@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "XHS Ad Filter",
+  "version": "0.1.0",
+  "description": "Detect, hide and collect suspected Xiaohongshu ad comments.",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": [
+    "https://www.xiaohongshu.com/*",
+    "https://*.xiaohongshu.com/*",
+    "https://baicaige.github.io/xhs-ad-filter/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.xiaohongshu.com/*", "https://*.xiaohongshu.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "XHS Ad Filter",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html"
+}

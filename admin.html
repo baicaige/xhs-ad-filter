@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>xhs-ad-filter 管理后台</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --panel-2: #eef3f8;
+      --text: #17202a;
+      --muted: #667085;
+      --line: #d9e0e8;
+      --primary: #0f766e;
+      --primary-dark: #115e59;
+      --danger: #b42318;
+      --warning: #b54708;
+      --ok: #067647;
+      --shadow: 0 8px 30px rgba(25, 39, 52, .08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+    header {
+      background: #102027;
+      color: #fff;
+      padding: 28px clamp(16px, 4vw, 48px);
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: clamp(24px, 3vw, 36px);
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 0;
+      max-width: 900px;
+      color: #cfe1e7;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(320px, .7fr);
+      gap: 18px;
+      padding: 20px clamp(16px, 4vw, 48px) 44px;
+    }
+    section, aside {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .panel { padding: 18px; }
+    .grid { display: grid; gap: 18px; }
+    .toolbar, .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    h2, h3 {
+      margin: 0 0 12px;
+      letter-spacing: 0;
+    }
+    h2 { font-size: 20px; }
+    h3 { font-size: 16px; }
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      min-width: 170px;
+      flex: 1;
+    }
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font: inherit;
+      color: var(--text);
+      background: #fff;
+    }
+    textarea { min-height: 110px; resize: vertical; }
+    button {
+      border: 0;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+      background: var(--primary);
+      color: #fff;
+    }
+    button:hover { background: var(--primary-dark); }
+    button.secondary { background: #e7edf2; color: #1d2939; }
+    button.secondary:hover { background: #d9e3ea; }
+    button.danger { background: var(--danger); }
+    button.ghost {
+      background: transparent;
+      color: var(--primary);
+      border: 1px solid var(--line);
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+      display: grid;
+      gap: 10px;
+    }
+    .pending-list { display: grid; gap: 12px; }
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .tag {
+      background: var(--panel-2);
+      color: #1d2939;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 12px;
+    }
+    .rule-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .stat {
+      background: var(--panel-2);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .stat strong {
+      display: block;
+      font-size: 24px;
+    }
+    .notice {
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: #ecfdf3;
+      color: var(--ok);
+      border: 1px solid #abefc6;
+    }
+    .notice.warn {
+      background: #fffaeb;
+      color: var(--warning);
+      border-color: #fedf89;
+    }
+    .empty {
+      padding: 22px;
+      color: var(--muted);
+      text-align: center;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+    }
+    @media (max-width: 980px) {
+      main { grid-template-columns: 1fr; }
+      .stat-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>广告审核中心</h1>
+    <p>审核本地待处理广告样本，通过后自动合并关键词、作者和帖子黑名单，并提交到 GitHub 仓库。</p>
+  </header>
+
+  <main>
+    <div class="grid">
+      <section class="panel">
+        <h2>GitHub 写入设置</h2>
+        <div class="toolbar">
+          <label>Owner <input id="owner" value="baicaige"></label>
+          <label>Repo <input id="repo" value="xhs-ad-filter"></label>
+          <label>Branch <input id="branch" value="main"></label>
+        </div>
+        <div class="toolbar" style="margin-top:12px">
+          <label>Fine-grained PAT <input id="token" type="password" autocomplete="off" placeholder="github_pat_..."></label>
+          <button id="saveSettings">保存设置</button>
+          <button id="loadRules" class="secondary">刷新规则库</button>
+        </div>
+        <p id="status" class="notice warn" style="margin:12px 0 0">Token 仅保存在当前浏览器 localStorage，请只授予此仓库 Contents 读写权限。</p>
+      </section>
+
+      <section class="panel">
+        <div class="toolbar" style="justify-content:space-between">
+          <h2>待审核</h2>
+          <div class="toolbar">
+            <button id="loadLocal" class="secondary">读取本地待审</button>
+            <button id="clearIgnored" class="ghost">清理已忽略</button>
+          </div>
+        </div>
+        <div id="pendingList" class="pending-list"></div>
+      </section>
+
+      <section class="panel">
+        <h2>手动新增样本</h2>
+        <textarea id="manualText" placeholder="粘贴广告评论内容，例如：复制口令→启动小红书 CA2871 高质量男生群"></textarea>
+        <div class="toolbar" style="margin-top:12px">
+          <label>作者 <input id="manualAuthor" placeholder="作者名称"></label>
+          <label>帖子 ID <input id="manualNote" placeholder="noteId"></label>
+          <button id="extractManual">提取特征</button>
+        </div>
+      </section>
+    </div>
+
+    <aside class="panel grid">
+      <section>
+        <h2>统计</h2>
+        <div class="stat-grid">
+          <div class="stat"><span>待审核</span><strong id="statPending">0</strong></div>
+          <div class="stat"><span>关键词</span><strong id="statRules">0</strong></div>
+          <div class="stat"><span>作者</span><strong id="statAuthors">0</strong></div>
+        </div>
+      </section>
+      <section>
+        <h2>规则库</h2>
+        <div id="ruleList" class="rule-list"></div>
+      </section>
+      <section>
+        <h2>作者黑名单</h2>
+        <div id="authorList" class="rule-list"></div>
+      </section>
+      <section>
+        <h2>帖子黑名单</h2>
+        <div id="noteList" class="rule-list"></div>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "pending_ads";
+    const SETTINGS_KEY = "xhs_admin_settings";
+    const state = {
+      pending: [],
+      rules: { keywords: [], regex: [] },
+      authors: { authors: [] },
+      notes: { notes: [] }
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const uniq = (items) => [...new Set(items.filter(Boolean).map((item) => String(item).trim()).filter(Boolean))];
+    const nowIso = () => new Date().toISOString();
+    const uuid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    function setStatus(message, warning = false) {
+      $("status").textContent = message;
+      $("status").className = warning ? "notice warn" : "notice";
+    }
+
+    function getSettings() {
+      return {
+        owner: $("owner").value.trim() || "baicaige",
+        repo: $("repo").value.trim() || "xhs-ad-filter",
+        branch: $("branch").value.trim() || "main",
+        token: $("token").value.trim()
+      };
+    }
+
+    function saveSettings() {
+      const settings = getSettings();
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      setStatus("设置已保存。");
+    }
+
+    function restoreSettings() {
+      try {
+        const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+        $("owner").value = settings.owner || "baicaige";
+        $("repo").value = settings.repo || "xhs-ad-filter";
+        $("branch").value = settings.branch || "main";
+        $("token").value = settings.token || "";
+      } catch {
+        setStatus("读取设置失败，请重新填写。", true);
+      }
+    }
+
+    function extractKeywords(text) {
+      const source = String(text || "");
+      const fixed = ["复制口令", "启动小红书", "脱单群", "搭子群", "交流群", "找对象", "单身", "高质量男生群"];
+      const hits = fixed.filter((word) => source.includes(word));
+      const codes = source.match(/\b[A-Z]{1,4}\d{2,8}\b/g) || [];
+      const groups = source.match(/[\u4e00-\u9fa5A-Za-z0-9]{2,12}(?:群|交流群|搭子|脱单故事)/g) || [];
+      return uniq([...hits, ...codes, ...groups]);
+    }
+
+    function normalizePending(item) {
+      const text = item.text || item.content || "";
+      return {
+        id: item.id || uuid(),
+        type: item.type || "group_ad",
+        text,
+        author: item.author || "",
+        noteId: item.noteId || item.note || "",
+        keywords: uniq(item.keywords || extractKeywords(text)),
+        createdAt: item.createdAt || item.time || nowIso(),
+        status: item.status || "pending"
+      };
+    }
+
+    function loadLocalPending() {
+      const local = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      state.pending = Array.isArray(local) ? local.map(normalizePending) : [];
+      saveLocalPending();
+      render();
+      setStatus(`已读取 ${state.pending.length} 条本地待审核样本。`);
+    }
+
+    function saveLocalPending() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.pending));
+    }
+
+    async function chromePending() {
+      if (!window.chrome?.storage?.local) return [];
+      return new Promise((resolve) => {
+        chrome.storage.local.get([STORAGE_KEY], (result) => resolve(result[STORAGE_KEY] || []));
+      });
+    }
+
+    async function loadAllPending() {
+      const local = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      const fromChrome = await chromePending();
+      const merged = [...local, ...fromChrome].map(normalizePending);
+      const byId = new Map(merged.map((item) => [item.id, item]));
+      state.pending = [...byId.values()];
+      saveLocalPending();
+      render();
+      setStatus(`已读取 ${state.pending.length} 条待审核样本。`);
+    }
+
+    async function ghGet(path) {
+      const settings = getSettings();
+      if (!settings.token) throw new Error("请先填写 GitHub PAT。");
+      const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${path}?ref=${encodeURIComponent(settings.branch)}`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${settings.token}`,
+          Accept: "application/vnd.github+json"
+        }
+      });
+      if (!res.ok) throw new Error(`${path} 读取失败：${res.status}`);
+      const data = await res.json();
+      const json = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\n/g, "")))));
+      return { json, sha: data.sha };
+    }
+
+    async function ghPut(path, json, sha, message) {
+      const settings = getSettings();
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(json, null, 2) + "\n")));
+      const res = await fetch(`https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${path}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${settings.token}`,
+          Accept: "application/vnd.github+json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          message,
+          content,
+          sha,
+          branch: settings.branch
+        })
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`${path} 提交失败：${res.status} ${body}`);
+      }
+      return res.json();
+    }
+
+    async function loadRules() {
+      const [rules, authors, notes] = await Promise.all([
+        ghGet("rules.json"),
+        ghGet("authors.json"),
+        ghGet("notes.json")
+      ]);
+      state.rules = rules.json;
+      state.authors = authors.json;
+      state.notes = notes.json;
+      render();
+      setStatus("规则库已从 GitHub 刷新。");
+    }
+
+    async function approveItem(id) {
+      const item = state.pending.find((entry) => entry.id === id);
+      if (!item) return;
+      setStatus("正在读取 GitHub 最新规则...");
+
+      const [rulesFile, authorsFile, notesFile] = await Promise.all([
+        ghGet("rules.json"),
+        ghGet("authors.json"),
+        ghGet("notes.json")
+      ]);
+
+      const nextRules = {
+        ...rulesFile.json,
+        keywords: uniq([...(rulesFile.json.keywords || []), ...(item.keywords || [])]),
+        regex: uniq(rulesFile.json.regex || [])
+      };
+      const nextAuthors = {
+        ...authorsFile.json,
+        authors: uniq([...(authorsFile.json.authors || []), item.author])
+      };
+      const nextNotes = {
+        ...notesFile.json,
+        notes: uniq([...(notesFile.json.notes || []), item.noteId])
+      };
+
+      const message = `Approve XHS ad sample ${item.id}`;
+      await ghPut("rules.json", nextRules, rulesFile.sha, message);
+      await ghPut("authors.json", nextAuthors, authorsFile.sha, message);
+      await ghPut("notes.json", nextNotes, notesFile.sha, message);
+
+      item.status = "approved";
+      state.rules = nextRules;
+      state.authors = nextAuthors;
+      state.notes = nextNotes;
+      saveLocalPending();
+      render();
+      setStatus("审核通过，规则已提交到 GitHub。");
+    }
+
+    function ignoreItem(id) {
+      const item = state.pending.find((entry) => entry.id === id);
+      if (!item) return;
+      item.status = "ignored";
+      saveLocalPending();
+      render();
+      setStatus("已忽略该样本。");
+    }
+
+    function clearIgnored() {
+      state.pending = state.pending.filter((item) => item.status !== "ignored" && item.status !== "approved");
+      saveLocalPending();
+      render();
+      setStatus("已清理已处理样本。");
+    }
+
+    function addManual() {
+      const text = $("manualText").value.trim();
+      if (!text) return setStatus("请先粘贴广告文本。", true);
+      state.pending.unshift(normalizePending({
+        text,
+        author: $("manualAuthor").value.trim(),
+        noteId: $("manualNote").value.trim()
+      }));
+      $("manualText").value = "";
+      saveLocalPending();
+      render();
+      setStatus("已提取特征并加入待审核。");
+    }
+
+    function renderList(id, items) {
+      const target = $(id);
+      target.innerHTML = "";
+      uniq(items).slice(0, 80).forEach((item) => {
+        const span = document.createElement("span");
+        span.className = "tag";
+        span.textContent = item;
+        target.append(span);
+      });
+    }
+
+    function renderPending() {
+      const list = $("pendingList");
+      const pending = state.pending.filter((item) => item.status === "pending");
+      list.innerHTML = "";
+      if (!pending.length) {
+        list.innerHTML = '<div class="empty">暂无待审核样本</div>';
+        return;
+      }
+      pending.forEach((item) => {
+        const card = document.createElement("article");
+        card.className = "card";
+        card.innerHTML = `
+          <strong>${escapeHtml(item.text || "(空文本)")}</strong>
+          <div class="meta">
+            <span>作者：${escapeHtml(item.author || "未知")}</span>
+            <span>帖子：${escapeHtml(item.noteId || "未知")}</span>
+            <span>${escapeHtml(item.createdAt)}</span>
+          </div>
+          <div class="tags">${(item.keywords || []).map((word) => `<span class="tag">${escapeHtml(word)}</span>`).join("")}</div>
+          <div class="toolbar">
+            <button data-approve="${item.id}">通过</button>
+            <button class="secondary" data-ignore="${item.id}">忽略</button>
+          </div>
+        `;
+        list.append(card);
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function render() {
+      const pendingCount = state.pending.filter((item) => item.status === "pending").length;
+      $("statPending").textContent = pendingCount;
+      $("statRules").textContent = (state.rules.keywords || []).length;
+      $("statAuthors").textContent = (state.authors.authors || []).length;
+      renderList("ruleList", state.rules.keywords || []);
+      renderList("authorList", state.authors.authors || []);
+      renderList("noteList", state.notes.notes || []);
+      renderPending();
+    }
+
+    document.addEventListener("click", async (event) => {
+      const approveId = event.target.dataset?.approve;
+      const ignoreId = event.target.dataset?.ignore;
+      try {
+        if (approveId) await approveItem(approveId);
+        if (ignoreId) ignoreItem(ignoreId);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+    $("saveSettings").addEventListener("click", saveSettings);
+    $("loadRules").addEventListener("click", () => loadRules().catch((error) => setStatus(error.message, true)));
+    $("loadLocal").addEventListener("click", () => loadAllPending().catch((error) => setStatus(error.message, true)));
+    $("clearIgnored").addEventListener("click", clearIgnored);
+    $("extractManual").addEventListener("click", addManual);
+
+    restoreSettings();
+    loadLocalPending();
+  </script>
+</body>
+</html>
