@@ -7,8 +7,16 @@ const COMMENT_SELECTORS = [
   "div[class*='comment-item']",
   "div[class*='CommentItem']"
 ];
+const POST_SELECTORS = [
+  "section.note-item",
+  "div.note-item",
+  "div[class*='note-item']",
+  "section[class*='note-item']",
+  "div[class*='feed-item']",
+  "section[class*='feed-item']"
+];
 const DEFAULT_RULES = {
-  rules: { keywords: ["复制口令", "启动小红书", "脱单群", "搭子群", "交流群"], regex: ["CA\\d{2,8}"] },
+  rules: { keywords: ["复制口令", "启动小红书", "脱单群", "搭子群", "交流群"], postKeywords: [], regex: ["CA\\d{2,8}"] },
   authors: { authors: [] },
   notes: { notes: [] }
 };
@@ -64,6 +72,11 @@ function extractRuleKeywords(text) {
   return [...new Set([...keywordHits, ...regexHits])];
 }
 
+function extractPostKeywords(text) {
+  const keywords = ruleState.rules?.postKeywords || [];
+  return keywords.filter((word) => text.includes(word));
+}
+
 function detectSuspicion(text) {
   const source = String(text || "");
   const hits = [];
@@ -93,6 +106,68 @@ function scan() {
   document
     .querySelectorAll(COMMENT_SELECTORS.join(","))
     .forEach(inspectNode);
+  document
+    .querySelectorAll(POST_SELECTORS.join(","))
+    .forEach(inspectPostNode);
+}
+
+function inspectPostNode(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE || node.hasAttribute(SEEN_ATTR)) return;
+  if (!isLikelyPost(node)) return;
+  node.setAttribute(SEEN_ATTR, "1");
+
+  const text = node.textContent.trim().replace(/\s+/g, " ");
+  const link = node.querySelector("a[href*='/explore/'], a[href*='/discovery/item/']");
+  const href = link ? new URL(link.getAttribute("href"), location.href).href : location.href;
+  const noteId = extractNoteIdFromUrl(href);
+  const keywords = extractPostKeywords(text);
+  const noteHit = noteId && (ruleState.notes?.notes || []).includes(noteId);
+  const suspicion = detectSuspicion(text);
+  const isBlocked = Boolean(keywords.length || noteHit);
+  const isSuspected = !isBlocked && suspicion.length >= 2;
+  if (!isBlocked && !isSuspected) return;
+
+  const item = {
+    id: uuid(),
+    type: "post_ad",
+    text,
+    author: "",
+    noteId,
+    keywords: keywords.length ? keywords : suspicion,
+    reason: isBlocked ? "matched_post_rule" : "suspected_post_pattern",
+    confidence: isBlocked ? "high" : "medium",
+    url: href,
+    createdAt: new Date().toISOString()
+  };
+
+  if (isBlocked) {
+    pageStats.blocked += 1;
+    hidePostNode(node, item);
+  } else {
+    pageStats.suspected += 1;
+    markSuspectedNode(node, suspicion);
+  }
+  chrome.runtime.sendMessage({ type: "collectPending", payload: item }, (response) => {
+    if (response?.ok && settings.reportMode !== "local") {
+      pageStats.reported += 1;
+      updateBadge();
+    }
+  });
+  updateBadge();
+}
+
+function isLikelyPost(node) {
+  const text = node.textContent || "";
+  if (text.length < 6 || text.length > 1600) return false;
+  if (node.matches("button, a, [role='button'], input, textarea, [contenteditable='true']")) return false;
+  const hasPostLink = Boolean(node.querySelector("a[href*='/explore/'], a[href*='/discovery/item/']"));
+  const hasMedia = Boolean(node.querySelector("img, video, picture"));
+  return hasPostLink || hasMedia;
+}
+
+function extractNoteIdFromUrl(url) {
+  const match = String(url || "").match(/(?:explore|discovery\/item)\/([a-zA-Z0-9]+)/);
+  return match ? match[1] : "";
 }
 
 function inspectNode(node) {
@@ -153,6 +228,12 @@ function markBlockedNode(node, keywords, item) {
   placeholder.textContent = `已隐藏疑似广告评论：${(item.keywords || []).join("、") || "黑名单命中"}`;
   placeholder.style.cssText = "margin:8px 0;padding:8px 10px;border:1px solid #fecdca;border-radius:6px;background:#fff1f3;color:#b42318;font-size:12px;";
   node.insertAdjacentElement("beforebegin", placeholder);
+  node.style.display = "none";
+}
+
+function hidePostNode(node, item) {
+  node.dataset.xhsAdFilterHit = "blocked-post";
+  node.title = `XHS Ad Filter post: ${(item.keywords || []).join(", ") || "blacklist"}`;
   node.style.display = "none";
 }
 

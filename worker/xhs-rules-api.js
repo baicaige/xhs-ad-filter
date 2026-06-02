@@ -30,6 +30,11 @@ export default {
         const result = await approveItem(env, item);
         return json({ ok: true, ...result });
       }
+      if (request.method === "POST" && url.pathname === "/rules/update") {
+        requireAdmin(request, env);
+        const result = await updateRules(env, await request.json());
+        return json({ ok: true, ...result });
+      }
       if (request.method === "POST" && url.pathname === "/submit") {
         requireSubmit(request, env);
         const item = normalizePending(await request.json());
@@ -72,11 +77,7 @@ async function approveItem(env, item) {
     ghGet(env, "pending.json").catch(() => ({ json: { pending: [] }, sha: null }))
   ]);
 
-  const nextRules = addRuleStats({
-    ...rulesFile.json,
-    keywords: uniq([...(rulesFile.json.keywords || []), ...(item.keywords || [])]),
-    regex: uniq(rulesFile.json.regex || [])
-  }, item.keywords || [], item.createdAt);
+  const nextRules = mergeApprovedRules(rulesFile.json, item);
   const nextAuthors = {
     ...authorsFile.json,
     authors: uniq([...(authorsFile.json.authors || []), item.author])
@@ -115,6 +116,19 @@ async function submitItem(env, item) {
   return { pending: nextPending };
 }
 
+async function updateRules(env, payload) {
+  const rulesFile = await ghGet(env, "rules.json");
+  const current = normalizeRules(rulesFile.json);
+  const nextRules = {
+    ...current,
+    keywords: mutateList(current.keywords, payload.addKeywords, payload.removeKeywords),
+    postKeywords: mutateList(current.postKeywords, payload.addPostKeywords, payload.removePostKeywords),
+    regex: mutateList(current.regex, payload.addRegex, payload.removeRegex)
+  };
+  await ghPut(env, "rules.json", nextRules, rulesFile.sha, "Update XHS filter rules");
+  return { rules: nextRules };
+}
+
 async function recordHit(env, payload) {
   const keywords = uniq(payload.keywords || []);
   if (!keywords.length) return { skipped: true };
@@ -125,13 +139,7 @@ async function recordHit(env, payload) {
 }
 
 function addRuleStats(rules, keywords, hitAt) {
-  const next = {
-    ...rules,
-    stats: {
-      keywords: { ...(rules.stats?.keywords || {}) },
-      regex: { ...(rules.stats?.regex || {}) }
-    }
-  };
+  const next = normalizeRules(rules);
   for (const keyword of uniq(keywords)) {
     next.stats.keywords[keyword] = {
       hitCount: Number(next.stats.keywords[keyword]?.hitCount || 0) + 1,
@@ -139,6 +147,40 @@ function addRuleStats(rules, keywords, hitAt) {
     };
   }
   return next;
+}
+
+function mergeApprovedRules(rules, item) {
+  const next = normalizeRules(rules);
+  const target = item.type === "post_ad" || item.type === "post_keyword" ? "postKeywords" : "keywords";
+  next[target] = uniq([...(next[target] || []), ...(item.keywords || [])]);
+  next.regex = uniq(next.regex || []);
+  next.stats[target] = { ...(next.stats[target] || {}) };
+  for (const keyword of uniq(item.keywords || [])) {
+    next.stats[target][keyword] = {
+      hitCount: Number(next.stats[target][keyword]?.hitCount || 0) + 1,
+      lastHitAt: item.createdAt || new Date().toISOString()
+    };
+  }
+  return next;
+}
+
+function normalizeRules(rules) {
+  return {
+    ...rules,
+    keywords: uniq(rules.keywords || []),
+    postKeywords: uniq(rules.postKeywords || []),
+    regex: uniq(rules.regex || []),
+    stats: {
+      keywords: { ...(rules.stats?.keywords || {}) },
+      postKeywords: { ...(rules.stats?.postKeywords || {}) },
+      regex: { ...(rules.stats?.regex || {}) }
+    }
+  };
+}
+
+function mutateList(current, addItems, removeItems) {
+  const remove = new Set(uniq(removeItems || []));
+  return uniq([...(current || []), ...(addItems || [])]).filter((item) => !remove.has(item));
 }
 
 function requireAdmin(request, env) {

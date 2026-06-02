@@ -218,11 +218,29 @@
 
       <section class="panel">
         <h2>手动新增样本</h2>
-        <textarea id="manualText" placeholder="粘贴广告评论内容，例如：复制口令→启动小红书 CA2871 高质量男生群"></textarea>
+        <textarea id="manualText" placeholder="粘贴广告评论或帖子内容，例如：复制口令→启动小红书 CA2871 高质量男生群"></textarea>
         <div class="toolbar" style="margin-top:12px">
+          <label>样本类型
+            <select id="manualType">
+              <option value="group_ad">评论广告</option>
+              <option value="post_ad">推荐页帖子</option>
+            </select>
+          </label>
           <label>作者 <input id="manualAuthor" placeholder="作者名称"></label>
           <label>帖子 ID <input id="manualNote" placeholder="noteId"></label>
           <button id="extractManual">提取特征</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>规则调整</h2>
+        <div class="toolbar">
+          <label>新增评论关键字 <input id="newKeyword" placeholder="复制口令"></label>
+          <button data-rule-add="keyword">加入评论规则</button>
+        </div>
+        <div class="toolbar" style="margin-top:12px">
+          <label>新增帖子过滤关键字 <input id="newPostKeyword" placeholder="找对象"></label>
+          <button data-rule-add="postKeyword">加入帖子规则</button>
         </div>
       </section>
     </div>
@@ -239,6 +257,10 @@
       <section>
         <h2>规则库</h2>
         <div id="ruleList" class="rule-list"></div>
+      </section>
+      <section>
+        <h2>帖子过滤关键字</h2>
+        <div id="postRuleList" class="rule-list"></div>
       </section>
       <section>
         <h2>作者黑名单</h2>
@@ -258,7 +280,7 @@
     const DEFAULT_API_BASE = "https://xhs-rules-api.qbbaicai.workers.dev";
     const state = {
       pending: [],
-      rules: { keywords: [], regex: [] },
+      rules: { keywords: [], postKeywords: [], regex: [] },
       authors: { authors: [] },
       notes: { notes: [] }
     };
@@ -395,7 +417,7 @@
 
     async function loadRules() {
       const bundle = await apiGet("/rules");
-      state.rules = bundle.rules || { keywords: [], regex: [], stats: { keywords: {}, regex: {} } };
+      state.rules = bundle.rules || { keywords: [], postKeywords: [], regex: [], stats: { keywords: {}, postKeywords: {}, regex: {} } };
       state.authors = bundle.authors || { authors: [] };
       state.notes = bundle.notes || { notes: [] };
       if (bundle.pending?.pending?.length) {
@@ -443,6 +465,7 @@
       const text = $("manualText").value.trim();
       if (!text) return setStatus("请先粘贴广告文本。", true);
       state.pending.unshift(normalizePending({
+        type: $("manualType").value,
         text,
         author: $("manualAuthor").value.trim(),
         noteId: $("manualNote").value.trim()
@@ -453,7 +476,28 @@
       setStatus("已提取特征并加入待审核。");
     }
 
-    function renderList(id, items, stats = {}) {
+    async function updateRule(payload, message) {
+      const result = await apiPost("/rules/update", payload);
+      state.rules = result.rules || state.rules;
+      render();
+      setStatus(message);
+    }
+
+    async function addRule(kind) {
+      if (kind === "keyword") {
+        const value = $("newKeyword").value.trim();
+        if (!value) return setStatus("请先输入评论关键字。", true);
+        $("newKeyword").value = "";
+        await updateRule({ addKeywords: [value] }, "评论关键字已加入规则库。");
+        return;
+      }
+      const value = $("newPostKeyword").value.trim();
+      if (!value) return setStatus("请先输入帖子过滤关键字。", true);
+      $("newPostKeyword").value = "";
+      await updateRule({ addPostKeywords: [value] }, "帖子过滤关键字已加入规则库。");
+    }
+
+    function renderList(id, items, stats = {}, removeKind = "") {
       const target = $(id);
       target.innerHTML = "";
       uniq(items).slice(0, 80).forEach((item) => {
@@ -462,6 +506,11 @@
         const hitCount = stats[item]?.hitCount;
         const lastHitAt = stats[item]?.lastHitAt;
         span.textContent = hitCount ? `${item} · ${hitCount}` : item;
+        if (removeKind) {
+          span.dataset.ruleRemove = removeKind;
+          span.dataset.value = item;
+          span.style.cursor = "pointer";
+        }
         if (lastHitAt) span.title = `最近命中：${lastHitAt}`;
         target.append(span);
       });
@@ -481,6 +530,7 @@
         card.innerHTML = `
           <strong>${escapeHtml(item.text || "(空文本)")}</strong>
           <div class="meta">
+            <span>类型：${escapeHtml(item.type === "post_ad" ? "推荐页帖子" : "评论广告")}</span>
             <span>作者：${escapeHtml(item.author || "未知")}</span>
             <span>帖子：${escapeHtml(item.noteId || "未知")}</span>
             <span>${escapeHtml(item.createdAt)}</span>
@@ -510,7 +560,8 @@
       $("statPending").textContent = pendingCount;
       $("statRules").textContent = (state.rules.keywords || []).length;
       $("statAuthors").textContent = (state.authors.authors || []).length;
-      renderList("ruleList", state.rules.keywords || [], state.rules.stats?.keywords || {});
+      renderList("ruleList", state.rules.keywords || [], state.rules.stats?.keywords || {}, "keyword");
+      renderList("postRuleList", state.rules.postKeywords || [], state.rules.stats?.postKeywords || {}, "postKeyword");
       renderList("authorList", state.authors.authors || []);
       renderList("noteList", state.notes.notes || []);
       renderPending();
@@ -519,9 +570,14 @@
     document.addEventListener("click", async (event) => {
       const approveId = event.target.dataset?.approve;
       const ignoreId = event.target.dataset?.ignore;
+      const addKind = event.target.dataset?.ruleAdd;
+      const removeKind = event.target.dataset?.ruleRemove;
       try {
         if (approveId) await approveItem(approveId);
         if (ignoreId) ignoreItem(ignoreId);
+        if (addKind) await addRule(addKind);
+        if (removeKind === "keyword") await updateRule({ removeKeywords: [event.target.dataset.value] }, "评论关键字已删除。");
+        if (removeKind === "postKeyword") await updateRule({ removePostKeywords: [event.target.dataset.value] }, "帖子过滤关键字已删除。");
       } catch (error) {
         setStatus(error.message, true);
       }

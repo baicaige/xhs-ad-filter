@@ -22,8 +22,17 @@
     "div[class*='comment-item']",
     "div[class*='CommentItem']"
   ];
+  const POST_SELECTORS = [
+    "section.note-item",
+    "div.note-item",
+    "div[class*='note-item']",
+    "section[class*='note-item']",
+    "div[class*='feed-item']",
+    "section[class*='feed-item']"
+  ];
   const DEFAULT_RULES = {
     keywords: ["复制口令", "启动小红书", "脱单群", "搭子群", "交流群"],
+    postKeywords: [],
     regex: ["CA\\d{2,8}"]
   };
   const state = {
@@ -97,6 +106,23 @@
     return [...new Set([...keywordHits, ...regexHits])];
   }
 
+  function extractPostKeywords(text) {
+    const keywords = state.rules.postKeywords || [];
+    return keywords.filter((word) => text.includes(word));
+  }
+
+  function detectSuspicion(text) {
+    const source = String(text || "");
+    const patterns = [
+      /\b[A-Z]{1,4}\d{2,8}\b/g,
+      /复制.{0,6}口令/g,
+      /启动小红书/g,
+      /(?:脱单|搭子|交友|对象|单身|高质量).{0,8}(?:群|交流群)/g,
+      /(?:私信|进群|加群|拉你|群内|群里)/g
+    ];
+    return patterns.filter((re) => re.test(source)).map((_, index) => `pattern_${index + 1}`);
+  }
+
   function findAuthor(node) {
     const candidates = [
       node.querySelector(".author"),
@@ -155,8 +181,60 @@
     });
   }
 
+  function inspectPostNode(node) {
+    if (node.nodeType !== Node.ELEMENT_NODE || node.hasAttribute(SEEN_ATTR)) return;
+    if (!isLikelyPost(node)) return;
+    node.setAttribute(SEEN_ATTR, "1");
+
+    const text = node.textContent.trim().replace(/\s+/g, " ");
+    const link = node.querySelector("a[href*='/explore/'], a[href*='/discovery/item/']");
+    const href = link ? new URL(link.getAttribute("href"), location.href).href : location.href;
+    const noteId = extractNoteIdFromUrl(href);
+    const keywords = extractPostKeywords(text);
+    const noteHit = noteId && (state.notes.notes || []).includes(noteId);
+    const suspicion = detectSuspicion(text);
+    const isBlocked = Boolean(keywords.length || noteHit);
+    const isSuspected = !isBlocked && suspicion.length >= 2;
+    if (!isBlocked && !isSuspected) return;
+
+    collect({
+      id: uuid(),
+      type: "post_ad",
+      text,
+      author: "",
+      noteId,
+      keywords: keywords.length ? keywords : suspicion,
+      reason: isBlocked ? "matched_post_rule" : "suspected_post_pattern",
+      confidence: isBlocked ? "high" : "medium",
+      url: href,
+      createdAt: new Date().toISOString()
+    });
+
+    if (isBlocked) {
+      state.blocked += 1;
+      node.style.display = "none";
+    } else {
+      markNode(node);
+    }
+  }
+
+  function isLikelyPost(node) {
+    const text = node.textContent || "";
+    if (text.length < 6 || text.length > 1600) return false;
+    if (node.matches("button, a, [role='button'], input, textarea, [contenteditable='true']")) return false;
+    const hasPostLink = Boolean(node.querySelector("a[href*='/explore/'], a[href*='/discovery/item/']"));
+    const hasMedia = Boolean(node.querySelector("img, video, picture"));
+    return hasPostLink || hasMedia;
+  }
+
+  function extractNoteIdFromUrl(url) {
+    const match = String(url || "").match(/(?:explore|discovery\/item)\/([a-zA-Z0-9]+)/);
+    return match ? match[1] : "";
+  }
+
   function scan() {
     document.querySelectorAll(COMMENT_SELECTORS.join(",")).forEach(inspectNode);
+    document.querySelectorAll(POST_SELECTORS.join(",")).forEach(inspectPostNode);
   }
 
   const observer = new MutationObserver(() => scan());
