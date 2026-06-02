@@ -10,5 +10,9 @@
   ],
   "regex": [
     "CA\\d{2,8}"
-  ]
+  ],
+  "stats": {
+    "keywords": {},
+    "regex": {}
+  }
 }

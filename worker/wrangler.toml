@@ -1,0 +1,9 @@
+name = "xhs-rules-api"
+main = "xhs-rules-api.js"
+compatibility_date = "2026-06-02"
+
+[vars]
+GITHUB_OWNER = "baicaige"
+GITHUB_REPO = "xhs-ad-filter"
+GITHUB_BRANCH = "main"
+ALLOW_PUBLIC_HITS = "false"

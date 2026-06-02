@@ -188,18 +188,21 @@
   <main>
     <div class="grid">
       <section class="panel">
-        <h2>GitHub 写入设置</h2>
+        <h2>Cloudflare Worker 写入设置</h2>
         <div class="toolbar">
-          <label>Owner <input id="owner" value="baicaige"></label>
-          <label>Repo <input id="repo" value="xhs-ad-filter"></label>
-          <label>Branch <input id="branch" value="main"></label>
+          <label>Worker API <input id="apiBaseUrl" placeholder="https://xhs-rules-api.your-subdomain.workers.dev"></label>
         </div>
         <div class="toolbar" style="margin-top:12px">
-          <label>Fine-grained PAT <input id="token" type="password" autocomplete="off" placeholder="github_pat_..."></label>
+          <label>后台口令 <input id="adminKey" type="password" autocomplete="off" placeholder="ADMIN_KEY"></label>
+          <label style="flex:0 0 220px;align-self:end">
+            <span style="display:flex;gap:8px;align-items:center;color:var(--text);font-size:14px">
+              <input id="rememberAdminKey" type="checkbox" style="width:auto"> 本标签页临时记住口令
+            </span>
+          </label>
           <button id="saveSettings">保存设置</button>
           <button id="loadRules" class="secondary">刷新规则库</button>
         </div>
-        <p id="status" class="notice warn" style="margin:12px 0 0">Token 仅保存在当前浏览器 localStorage，请只授予此仓库 Contents 读写权限。</p>
+        <p id="status" class="notice warn" style="margin:12px 0 0">GitHub PAT 只放在 Cloudflare Worker Secret 中；本页只保存 Worker 地址，后台口令默认只保存在页面内存。</p>
       </section>
 
       <section class="panel">
@@ -251,6 +254,8 @@
   <script>
     const STORAGE_KEY = "pending_ads";
     const SETTINGS_KEY = "xhs_admin_settings";
+    const SESSION_ADMIN_KEY = "xhs_admin_session_key";
+    const DEFAULT_API_BASE = "https://xhs-rules-api.qbbaicai.workers.dev";
     const state = {
       pending: [],
       rules: { keywords: [], regex: [] },
@@ -269,30 +274,45 @@
     }
 
     function getSettings() {
+      const typedKey = $("adminKey").value.trim();
       return {
-        owner: $("owner").value.trim() || "baicaige",
-        repo: $("repo").value.trim() || "xhs-ad-filter",
-        branch: $("branch").value.trim() || "main",
-        token: $("token").value.trim()
+        apiBaseUrl: ($("apiBaseUrl").value.trim() || DEFAULT_API_BASE).replace(/\/$/, ""),
+        adminKey: typedKey || sessionStorage.getItem(SESSION_ADMIN_KEY) || ""
       };
     }
 
     function saveSettings() {
       const settings = getSettings();
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-      setStatus("设置已保存。");
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        apiBaseUrl: settings.apiBaseUrl
+      }));
+      if ($("rememberAdminKey").checked && $("adminKey").value.trim()) {
+        sessionStorage.setItem(SESSION_ADMIN_KEY, $("adminKey").value.trim());
+        setStatus("Worker 设置已保存，后台口令仅在本标签页临时保存。");
+        return;
+      }
+      sessionStorage.removeItem(SESSION_ADMIN_KEY);
+      setStatus("Worker 设置已保存，后台口令未持久保存。");
     }
 
     function restoreSettings() {
       try {
         const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-        $("owner").value = settings.owner || "baicaige";
-        $("repo").value = settings.repo || "xhs-ad-filter";
-        $("branch").value = settings.branch || "main";
-        $("token").value = settings.token || "";
+        $("apiBaseUrl").value = settings.apiBaseUrl || DEFAULT_API_BASE;
+        $("adminKey").value = sessionStorage.getItem(SESSION_ADMIN_KEY) || "";
+        $("rememberAdminKey").checked = Boolean($("adminKey").value);
+        scrubLegacySecrets(settings);
       } catch {
         setStatus("读取设置失败，请重新填写。", true);
       }
+    }
+
+    function scrubLegacySecrets(settings) {
+      if (!settings.token && !settings.adminKey) return;
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        apiBaseUrl: settings.apiBaseUrl || DEFAULT_API_BASE
+      }));
+      setStatus("已清理旧版本保存在 localStorage 里的敏感口令。");
     }
 
     function extractKeywords(text) {
@@ -348,96 +368,59 @@
       setStatus(`已读取 ${state.pending.length} 条待审核样本。`);
     }
 
-    async function ghGet(path) {
+    async function apiGet(path) {
       const settings = getSettings();
-      if (!settings.token) throw new Error("请先填写 GitHub PAT。");
-      const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${path}?ref=${encodeURIComponent(settings.branch)}`;
-      const res = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${settings.token}`,
-          Accept: "application/vnd.github+json"
-        }
-      });
-      if (!res.ok) throw new Error(`${path} 读取失败：${res.status}`);
-      const data = await res.json();
-      const json = JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\n/g, "")))));
-      return { json, sha: data.sha };
+      const res = await fetch(`${settings.apiBaseUrl}${path}`, { headers: { Accept: "application/json" } });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || `${path} 请求失败：${res.status}`);
+      return data;
     }
 
-    async function ghPut(path, json, sha, message) {
+    async function apiPost(path, payload, requireKey = true) {
       const settings = getSettings();
-      const content = btoa(unescape(encodeURIComponent(JSON.stringify(json, null, 2) + "\n")));
-      const res = await fetch(`https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${path}`, {
-        method: "PUT",
+      if (requireKey && !settings.adminKey) throw new Error("请先填写 Worker 后台口令。");
+      const res = await fetch(`${settings.apiBaseUrl}${path}`, {
+        method: "POST",
         headers: {
-          Authorization: `Bearer ${settings.token}`,
-          Accept: "application/vnd.github+json",
-          "Content-Type": "application/json"
+          Authorization: `Bearer ${settings.adminKey}`,
+          Accept: "application/json",
+          "Content-Type": "application/json; charset=utf-8"
         },
-        body: JSON.stringify({
-          message,
-          content,
-          sha,
-          branch: settings.branch
-        })
+        body: JSON.stringify(payload)
       });
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`${path} 提交失败：${res.status} ${body}`);
-      }
-      return res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || `${path} 请求失败：${res.status}`);
+      return data;
     }
 
     async function loadRules() {
-      const [rules, authors, notes] = await Promise.all([
-        ghGet("rules.json"),
-        ghGet("authors.json"),
-        ghGet("notes.json")
-      ]);
-      state.rules = rules.json;
-      state.authors = authors.json;
-      state.notes = notes.json;
+      const bundle = await apiGet("/rules");
+      state.rules = bundle.rules || { keywords: [], regex: [], stats: { keywords: {}, regex: {} } };
+      state.authors = bundle.authors || { authors: [] };
+      state.notes = bundle.notes || { notes: [] };
+      if (bundle.pending?.pending?.length) {
+        const merged = [...state.pending, ...bundle.pending.pending.map(normalizePending)];
+        const byId = new Map(merged.map((item) => [item.id, item]));
+        state.pending = [...byId.values()];
+        saveLocalPending();
+      }
       render();
-      setStatus("规则库已从 GitHub 刷新。");
+      setStatus("规则库已从 Cloudflare Worker 刷新。");
     }
 
     async function approveItem(id) {
       const item = state.pending.find((entry) => entry.id === id);
       if (!item) return;
-      setStatus("正在读取 GitHub 最新规则...");
-
-      const [rulesFile, authorsFile, notesFile] = await Promise.all([
-        ghGet("rules.json"),
-        ghGet("authors.json"),
-        ghGet("notes.json")
-      ]);
-
-      const nextRules = {
-        ...rulesFile.json,
-        keywords: uniq([...(rulesFile.json.keywords || []), ...(item.keywords || [])]),
-        regex: uniq(rulesFile.json.regex || [])
-      };
-      const nextAuthors = {
-        ...authorsFile.json,
-        authors: uniq([...(authorsFile.json.authors || []), item.author])
-      };
-      const nextNotes = {
-        ...notesFile.json,
-        notes: uniq([...(notesFile.json.notes || []), item.noteId])
-      };
-
-      const message = `Approve XHS ad sample ${item.id}`;
-      await ghPut("rules.json", nextRules, rulesFile.sha, message);
-      await ghPut("authors.json", nextAuthors, authorsFile.sha, message);
-      await ghPut("notes.json", nextNotes, notesFile.sha, message);
+      setStatus("正在通过 Cloudflare Worker 写入 GitHub...");
+      const result = await apiPost("/approve", item);
 
       item.status = "approved";
-      state.rules = nextRules;
-      state.authors = nextAuthors;
-      state.notes = nextNotes;
+      state.rules = result.rules || state.rules;
+      state.authors = result.authors || state.authors;
+      state.notes = result.notes || state.notes;
       saveLocalPending();
       render();
-      setStatus("审核通过，规则已提交到 GitHub。");
+      setStatus("审核通过，Worker 已把规则提交到 GitHub。");
     }
 
     function ignoreItem(id) {
@@ -470,13 +453,16 @@
       setStatus("已提取特征并加入待审核。");
     }
 
-    function renderList(id, items) {
+    function renderList(id, items, stats = {}) {
       const target = $(id);
       target.innerHTML = "";
       uniq(items).slice(0, 80).forEach((item) => {
         const span = document.createElement("span");
         span.className = "tag";
-        span.textContent = item;
+        const hitCount = stats[item]?.hitCount;
+        const lastHitAt = stats[item]?.lastHitAt;
+        span.textContent = hitCount ? `${item} · ${hitCount}` : item;
+        if (lastHitAt) span.title = `最近命中：${lastHitAt}`;
         target.append(span);
       });
     }
@@ -524,7 +510,7 @@
       $("statPending").textContent = pendingCount;
       $("statRules").textContent = (state.rules.keywords || []).length;
       $("statAuthors").textContent = (state.authors.authors || []).length;
-      renderList("ruleList", state.rules.keywords || []);
+      renderList("ruleList", state.rules.keywords || [], state.rules.stats?.keywords || {});
       renderList("authorList", state.authors.authors || []);
       renderList("noteList", state.notes.notes || []);
       renderPending();

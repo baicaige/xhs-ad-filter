@@ -1,0 +1,36 @@
+name: 提交广告样本
+description: 不需要 GitHub PAT，直接提交疑似小红书广告样本到待审核池。
+title: "[广告样本] "
+labels: ["ad-sample", "pending-review"]
+body:
+  - type: textarea
+    id: text
+    attributes:
+      label: 广告内容
+      description: 粘贴完整广告评论或私信文本。
+      placeholder: 复制口令→启动小红书 CA2871 高质量男生群
+    validations:
+      required: true
+  - type: input
+    id: author
+    attributes:
+      label: 作者
+      description: 可选，填写广告账号名称。
+      placeholder: 广州脱单搭子
+    validations:
+      required: false
+  - type: input
+    id: noteId
+    attributes:
+      label: 帖子 ID
+      description: 可选，填写小红书 noteId。
+      placeholder: 6a190f190000000035025494
+    validations:
+      required: false
+  - type: input
+    id: sourceUrl
+    attributes:
+      label: 来源链接
+      description: 可选，填写发现广告的页面 URL。
+    validations:
+      required: false
